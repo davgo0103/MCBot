@@ -5,6 +5,7 @@ const pvp = require('mineflayer-pvp').plugin
 
 // 設定機器人數量
 const botCount = 10
+const reconnectDelay = 5000  // 重連延遲時間（毫秒）
 
 // 創建並登入多個機器人
 for (let i = 0; i < botCount; i++) {
@@ -12,6 +13,27 @@ for (let i = 0; i < botCount; i++) {
 }
 
 async function createBot(username, index) {
+    let bot = createBotInstance(username, index)
+
+    bot.on('spawn', async () => {
+        const mcData = require('minecraft-data')(bot.version)
+        const defaultMove = new Movements(bot, mcData)
+        bot.pathfinder.setMovements(defaultMove)
+        await startBehavior(bot)  // 使用 await 確保異步操作的順序性
+    })
+
+    bot.on('kicked', reason => {
+        console.log(`Bot ${index} kicked:`, reason)
+        setTimeout(() => bot = createBotInstance(username, index), reconnectDelay)  // 延遲後重新嘗試連接
+    })
+
+    bot.on('error', err => {
+        console.log(`Bot ${index} error:`, err)
+        setTimeout(() => bot = createBotInstance(username, index), reconnectDelay)  // 延遲後重新嘗試連接
+    })
+}
+
+function createBotInstance(username, index) {
     const bot = mineflayer.createBot({
         host: 'localhost',
         username: username,
@@ -24,59 +46,34 @@ async function createBot(username, index) {
     bot.loadPlugin(pathfinder)
     bot.loadPlugin(pvp)
 
-    bot.on('spawn', async () => {
-        const mcData = require('minecraft-data')(bot.version)
-        const defaultMove = new Movements(bot, mcData)
-        bot.pathfinder.setMovements(defaultMove)
-        await startRandomMovement(bot)  // 使用 await 確保異步操作的順序性
-
-        // 自動攻擊並跟蹤指定的玩家ID
-        startPvP(bot)
-    })
-
-    // 记录错误和被踢出服务器的原因
-    bot.on('kicked', reason => console.log(`Bot ${index} kicked:`, reason))
-    bot.on('error', err => console.log(`Bot ${index} error:`, err))
+    return bot
 }
 
-// 隨機移動
-async function startRandomMovement(bot) {
-    function getRandomInterval(min, max) {
-        return Math.floor(Math.random() * (max - min + 1)) + min
-    }
-
+// 行為邏輯：跟蹤或隨機移動
+async function startBehavior(bot) {
     setInterval(async () => {
-        const x = bot.entity.position.x + (Math.random() * 20 - 10)
-        const y = bot.entity.position.y
-        const z = bot.entity.position.z + (Math.random() * 20 - 10)
-        const goal = new GoalNear(x, y, z, 1)
-        await bot.pathfinder.setGoal(goal)
-    }, getRandomInterval(3000, 7000))
-
-    setInterval(async () => {
-        if (Math.random() > 0.5) {
-            bot.setControlState('jump', true)
-            await new Promise(resolve => setTimeout(resolve, 200))
-            bot.setControlState('jump', false)
-        }
-    }, getRandomInterval(2000, 5000))
-}
-
-// PvP 功能 - 攻擊並跟蹤指定玩家ID
-var attack_player_id = 'PET_davvgo'
-function startPvP(bot) {
-    bot.on('physicsTick', () => {
         const target = bot.players[attack_player_id]?.entity
         if (target) {
-            // 跟蹤目標玩家
+            // 如果玩家存在，跟蹤目標玩家
             const goal = new GoalNear(target.position.x, target.position.y, target.position.z, 1)
             bot.pathfinder.setGoal(goal)
 
             // 開始攻擊
             bot.pvp.attack(target)
+        } else {
+            // 玩家不存在，隨機移動
+            const x = bot.entity.position.x + (Math.random() * 20 - 10)
+            const y = bot.entity.position.y
+            const z = bot.entity.position.z + (Math.random() * 20 - 10)
+            const goal = new GoalNear(x, y, z, 1)
+            await bot.pathfinder.setGoal(goal)
         }
-    })
+    }, 1000)  // 每秒檢查一次
+}
 
+// PvP 功能 - 當玩家存在時執行攻擊
+var attack_player_id = 'PET_davvgo'
+function startPvP(bot) {
     bot.on('stoppedAttacking', () => {
         const target = bot.players[attack_player_id]?.entity
         if (target) {
