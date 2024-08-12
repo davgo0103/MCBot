@@ -1,15 +1,20 @@
+import { version } from "typescript"
+
 const mineflayer = require('mineflayer')
 const { pathfinder, Movements, goals } = require('mineflayer-pathfinder')
 const { GoalNear } = goals
 const pvp = require('mineflayer-pvp').plugin
 
 // 設定機器人數量
-const botCount = 10
-const reconnectDelay = 5000  // 重連延遲時間（毫秒）
+const botCount = 50
+const reconnectDelay = 1000  // 重連延遲時間（毫秒）
+const loginDelay = 400       // 每個 BOT 之間的登入延遲（毫秒）
 
 // 創建並登入多個機器人
 for (let i = 0; i < botCount; i++) {
-    createBot(`Notch${i}`, i)
+    setTimeout(() => {
+        createBot(`Notch${i}`, i)
+    }, i * loginDelay);  // 每個機器人的創建時間間隔 200 毫秒
 }
 
 async function createBot(username, index) {
@@ -31,6 +36,12 @@ async function createBot(username, index) {
         console.log(`Bot ${index} error:`, err)
         setTimeout(() => bot = createBotInstance(username, index), reconnectDelay)  // 延遲後重新嘗試連接
     })
+
+    bot.on('error', (err) => {
+        console.error(`Bot ${index} error:`, err);
+        console.error(`Full error object:`, JSON.stringify(err));
+        setTimeout(() => bot = createBotInstance(username, index), reconnectDelay);
+    });
 }
 
 function createBotInstance(username, index) {
@@ -39,6 +50,7 @@ function createBotInstance(username, index) {
         username: username,
         password: '12345678',  // 如果你使用的是 Mojang 或 Microsoft 認證，需要提供正確的密碼
         port: 25565,
+        version: '1.19.4',
         auth: 'offline',       // 使用 'offline' 模式，適用於無驗證伺服器
     })
 
